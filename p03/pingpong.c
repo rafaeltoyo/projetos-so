@@ -1,48 +1,32 @@
 #include "pingpong.h"
 
-void dispatcher_body();
-void scheduler();
-
 /* MainTask */
 task_t mainTask;
-task_t dispatcherTask;
 task_t *currentTask;
-task_t **readyQueue;
 unsigned long count_id = 0;
 
-void pingpong_init ()
-{
+void pingpong_init () {
 	setvbuf(stdout, 0, _IONBF, 0);
 	/* Inicializa o encadeamento das task */
 	mainTask.prev = 0;
 	mainTask.next = 0;
-	/* Seta o estado */
-	mainTask.state = READY;
+	mainTask.tid = count_id;
 	/* Apontar para main */
 	mainTask.main = &mainTask;
-	/* Atribui o id = 0 para a task principal */
-	mainTask.tid = count_id;
 	/* Realiza uma cópia do contexto atual pra ser o contexto da main */
 	getcontext (&(mainTask.context));
 	/* Salvar um ponteiro para a task atual em execucao */
 	currentTask = &mainTask;
-
-	/* Inicializar o dispatcher */
-	task_create (&dispatcherTask, (void*)(*dispatcher_body));
 }
 
-int task_create (task_t *task, void (*start_routine)(void*), void *arg)
-{
+int task_create (task_t *task, void (*start_routine)(void*), void *arg) {
 	char *stack;
 	/* Inicializa o encadeamento das task */
 	task->prev = 0;
 	task->next = 0;
-	/* Seta o estado */
-	task->state = READY;
+	task->tid = ++count_id;
 	/* Apontar para main */
 	task->main = &mainTask;
-	/* Atribui um id para a task */
-	task->tid = ++count_id;
 	/* Realiza uma cópia do contexto atual */
 	getcontext (&(task->context));
 	/* Cria uma stack para essa task */
@@ -62,89 +46,39 @@ int task_create (task_t *task, void (*start_routine)(void*), void *arg)
 	}
 	/* Cria o contexto com a rotina passada */
 	makecontext (&(task->context), (void*)(*start_routine), 1, (void*)arg);
-	/* FCFS */
-	queue_append((queue_t**)readyQueue, (queue_t*)task);
-	task->queue = readyQueue;
-
 	#ifdef DEBUG
 	printf ("task_create: criou tarefa %d\n", task->tid);
 	#endif
-
 	return task->tid;
 }
 
-int task_switch (task_t *task)
-{
+int task_switch (task_t *task) {
+	ucontext_t dummy;
 	/* Salvar a task atual como antiga (sera trocada) */
 	task_t *oldTask = currentTask;
-
 	/* Muda o ponteiro para a nova "atual" task */
 	/* Atualizar esse valor antes da realizacao do swapcontext */
 	currentTask = task;
-
 	/* Salva o estado atual do contexto em execucao antes da troca */
 	/* Troca para o contexto da task passada como parametro */
-	if ( swapcontext(&(oldTask->context),&(task->context)) < 0 )
+	if ( swapcontext(&(oldTask->context),&(task->context)) < 0 ) {
 		return -1;
-
+	}
 	#ifdef DEBUG
 	printf ("task_switch: trocando contexto %d -> %d\n", oldTask->tid, task->tid);
 	#endif
-
 	return 0;
 }
 
-void task_exit (int exit_code)
-{
+void task_exit (int exit_code) {
 	/* Retorna para task principal (inicial no caso) */
 	#ifdef DEBUG
 	printf ("task_exit: tarefa %d sendo encerrada\n", currentTask->tid);
 	#endif
-
 	task_switch(&mainTask);
 }
 
-int task_id ()
-{
+int task_id () {
 	/* Retorna o id da task apontada pelo ponteiro currentTask */
 	return currentTask->tid;
-}
-
-void task_suspend (task_t *task, task_t **queue)
-{
-	/* Ha uma task passada como parametro? */
-	if (!task)
-		task = currentTask;
-	task->state = SUSPENDED;
-	/* Ha uma queue passada como parametro? */
-	if (!task->queue)
-		return;
-	/* Troca a task de fila (atual -> queue) */
-	queue_remove((queue_t**)task->queue, (queue_t*)task);
-	queue_append((queue_t**)queue, (queue_t*)task);
-}
-
-void task_resume (task_t *task)
-{
-	task->state = READY;
-	/*  */
-	if (task->queue)
-		queue_remove((queue_t**)task->queue, (queue_t*)task);
-}
-
-void task_yield ()
-{
-	queue_append((queue_t**)readyQueue, (queue_t*)currentTask);
-	task->queue = readyQueue;
-	task_switch(&dispatcherTask);
-}
-
-void dispatcher_body ()
-{
-
-}
-
-task_t* scheduler ()
-{
-
 }

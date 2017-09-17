@@ -221,15 +221,12 @@ void dispatcher_body ()
 	/* Enquanto houver tarefas da fila de prontas */
 	while ( queue_size((queue_t*)readyQueue) )
 	{
-		#ifdef DEBUG
-		queue_print("dispatcher: fila antes do scheduler:\n",(queue_t*)nextTask,(void*)*print_elem);
-		#endif
 		/* Usar o scheduler para obter uma nova tarefa */
 		nextTask = scheduler();
 		if (nextTask)
 		{
 			#ifdef DEBUG
-			queue_print("dispatcher: fila depois do scheduler:\n",(queue_t*)nextTask,(void*)*print_elem);
+			queue_print("dispatcher: fila",(queue_t*)nextTask,(void*)*print_elem);
 			#endif
 
 			/* Remover essa tarefa escolhida da fila de prontos */

@@ -34,6 +34,6 @@ $(PROJECTNAME3): $(TASK03) $(OBJECTS)
 
 # limpar os executáveis
 clean:
-	rm -f $(TASK1) $(TASK2) $(TASK3)  $(OBJECTS)
+	rm -f $(TASK01) $(TASK02) $(TASK03)  $(OBJECTS)
 	rm -f $(PROJECTNAME1) $(PROJECTNAME2) $(PROJECTNAME3)
 

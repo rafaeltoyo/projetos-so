@@ -5,7 +5,8 @@ task_t mainTask;
 task_t *currentTask;
 unsigned long count_id = 0;
 
-void pingpong_init () {
+void pingpong_init ()
+{
 	setvbuf(stdout, 0, _IONBF, 0);
 	/* Inicializa o encadeamento das task */
 	mainTask.prev = 0;
@@ -19,7 +20,8 @@ void pingpong_init () {
 	currentTask = &mainTask;
 }
 
-int task_create (task_t *task, void (*start_routine)(void*), void *arg) {
+int task_create (task_t *task, void (*start_routine)(void*), void *arg)
+{
 	char *stack;
 	/* Inicializa o encadeamento das task */
 	task->prev = 0;
@@ -52,7 +54,8 @@ int task_create (task_t *task, void (*start_routine)(void*), void *arg) {
 	return task->tid;
 }
 
-int task_switch (task_t *task) {
+int task_switch (task_t *task)
+{
 	/* Salvar a task atual como antiga (sera trocada) */
 	task_t *oldTask = currentTask;
 	/* Muda o ponteiro para a nova "atual" task */
@@ -60,16 +63,17 @@ int task_switch (task_t *task) {
 	currentTask = task;
 	/* Salva o estado atual do contexto em execucao antes da troca */
 	/* Troca para o contexto da task passada como parametro */
-	if ( swapcontext(&(oldTask->context),&(task->context)) < 0 ) {
-		return -1;
-	}
 	#ifdef DEBUG
 	printf ("task_switch: trocando contexto %d -> %d\n", oldTask->tid, task->tid);
 	#endif
+	if ( swapcontext(&(oldTask->context),&(task->context)) < 0 )
+		return -1;
 	return 0;
 }
 
-void task_exit (int exit_code) {
+void task_exit (int exit_code)
+{
+	(void)exit_code;
 	/* Retorna para task principal (inicial no caso) */
 	#ifdef DEBUG
 	printf ("task_exit: tarefa %d sendo encerrada\n", currentTask->tid);

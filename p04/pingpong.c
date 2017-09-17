@@ -80,7 +80,7 @@ int task_create (task_t *task, void (*start_routine)(void*), void *arg)
 	}
 	/* Cria o contexto com a rotina passada */
 	makecontext (&(task->context), (void*)(*start_routine), 1, (void*)arg);
-	/* FCFS */
+	/* Adicionar a fila de tarefas prontas */
 	queue_append((queue_t**)&readyQueue, (queue_t*)task);
 	task->queue = &readyQueue;
 
@@ -100,11 +100,11 @@ int task_switch (task_t *task)
 	/* Atualizar esse valor antes da realizacao do swapcontext */
 	currentTask = task;
 
+	/* Salva o estado atual do contexto em execucao antes da troca */
+	/* Troca para o contexto da task passada como parametro */
 	#ifdef DEBUG
 	printf ("task_switch: trocando contexto %d -> %d\n", oldTask->tid, task->tid);
 	#endif
-	/* Salva o estado atual do contexto em execucao antes da troca */
-	/* Troca para o contexto da task passada como parametro */
 	if ( swapcontext(&(oldTask->context),&(task->context)) < 0 )
 		return -1;
 	return 0;
@@ -112,19 +112,28 @@ int task_switch (task_t *task)
 
 void task_exit (int exit_code)
 {
-	/* Retorna para task principal (inicial no caso) */
+	(void)exit_code;
+	/* Tarefa sendo encerrada ... */
 	#ifdef DEBUG
 	printf ("task_exit: tarefa %d sendo encerrada\n", currentTask->tid);
 	#endif
-	
+
+	/*
+	 * Flag para indicar ao dispatcher que a tarefa foi encerrada
+	 * para limpesa de variáveis dessa tarefa.
+	 */
+	isExitCurrentTask = 1;
+
+	/* Retorna para task principal (inicial no caso) caso o dispatcher terminar */
 	if ( currentTask == &dispatcherTask )
 	{
 		#ifdef DEBUG
 		printf ("task_exit: voltando para a main\n");
 		#endif
-		isExitCurrentTask = 1;
+		
 		task_switch(&mainTask);
 	}
+	/* Senao temos que retornar para o dispatcher mesmo */
 	else
 	{
 		#ifdef DEBUG
@@ -176,61 +185,82 @@ void task_resume (task_t *task)
 
 void task_yield ()
 {
-	if (currentTask != &mainTask)
-	{
+	/* Se a tarefa que chamou esse metodo nao eh a main ... */
+	if (currentTask != &mainTask) {
+		/* ... devemos retornar ela para a fila de tarefas prontas ... */
 		queue_append((queue_t**)&readyQueue, (queue_t*)currentTask);
 		currentTask->queue = &readyQueue;
 	}
+	/* ... e entao chamar o dispatcher. */
 	task_switch(&dispatcherTask);
 }
 
-// imprime na tela um elemento da fila (chamada pela função queue_print)
+#ifdef DEBUG
+/* 
+ * imprime na tela um elemento da fila (chamada pela função queue_print) 
+ * Funcao copiada e adaptada do testafila.c (projeto 00)
+ * Usada apenas para debugar a fila de tarefas prontas
+ */
 void print_elem (void *ptr)
 {
    task_t *elem = ptr ;
 
    if (!elem)
-	  return ;
+      return ;
 
    elem->prev ? printf ("%d", elem->prev->tid) : printf ("*") ;
-   printf ("<%d/%d>", elem->tid, elem->prio_dynamic) ;
+   printf ("<%d>", elem->tid) ;
    elem->next ? printf ("%d", elem->next->tid) : printf ("*") ;
 }
+#endif
 
+/* *** *** *** FUNCAO DO DISPATCHER *** *** *** */
 void dispatcher_body ()
 {
 	task_t *nextTask;
+	/* Enquanto houver tarefas da fila de prontas */
 	while ( queue_size((queue_t*)readyQueue) )
 	{
 		#ifdef DEBUG
-		queue_print("dispatcher: fila",(queue_t*)nextTask,(void*)*print_elem);
+		queue_print("dispatcher: fila antes do scheduler:\n",(queue_t*)nextTask,(void*)*print_elem);
 		#endif
+		/* Usar o scheduler para obter uma nova tarefa */
 		nextTask = scheduler();
 		if (nextTask)
 		{
 			#ifdef DEBUG
-			queue_print("dispatcher: fila",(queue_t*)nextTask,(void*)*print_elem);
+			queue_print("dispatcher: fila depois do scheduler:\n",(queue_t*)nextTask,(void*)*print_elem);
 			#endif
+
+			/* Remover essa tarefa escolhida da fila de prontos */
 			queue_remove((queue_t**)&readyQueue, (queue_t*)nextTask);
 			nextTask->queue = 0;
+
 			#ifdef DEBUG
 			printf("dispatcher: entrando task %d\n", nextTask->tid);
 			#endif
-			if ( task_switch (nextTask) )
+
+			/* Trocar para essa task */
+			if ( task_switch (nextTask) ) {
 				exit(-1);
-			if (isExitCurrentTask == 1)
-			{
+			}
+
+			/* Ao retornar ao dispatcher, verificar se a tarefa nao terminou sua exec. */
+			if (isExitCurrentTask == 1) {
 				#ifdef DEBUG
-				printf ("task_switch: limpando a task %d\n", nextTask->tid);
+				printf ("dispatcher: limpando a task %d\n", nextTask->tid);
 				#endif
+				/* Limpar as alocacoes dinamicas */
 				free(nextTask->context.uc_stack.ss_sp);
 				isExitCurrentTask = 0;
 			}
 		}
 	}
 	#ifdef DEBUG
-	printf("dispatcher: finalizando\n");
+	printf("dispatcher: finalizando \n");
 	#endif
+
+	/* Encerrar o dispatcher */
 	task_exit(0);
 }
 
@@ -299,24 +329,30 @@ task_t* scheduler ()
 
 void task_setprio (task_t *task, int prio)
 {
+	/* Verificar os limites de prioridade */
 	if (prio > 20 || prio < -20)
 	{
 		#ifdef DEBUG
 		printf("task_setprio: prioridade %d inválida (-20 a +20 apenas)\n", prio);
 		#endif
+		/* Nao atualizar prioridade se nao for valida */
 		return;
 	}
+	/* Se nao houver task, vamos modificar a task atual */
 	if (task == NULL)
 	{
 		task = currentTask;
 	}
+	/* Atualizar prioridade estatica e resetar a prioridade dinamica */
 	task->prio_static = prio;
 	task->prio_dynamic = prio;
 }
 
 int task_getprio (task_t *task)
 {
+	/* Se nao houver task, retorna a prioridade da task atual */
 	if (task == NULL)
 		return currentTask->prio_static;
+	/* Se nao retorna a prioridade da task */
 	return task->prio_static;
 }

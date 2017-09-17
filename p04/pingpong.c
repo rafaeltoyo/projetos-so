@@ -27,6 +27,9 @@ void pingpong_init ()
 	mainTask.main = &mainTask;
 	/* Atribui o id = 0 para a task principal */
 	mainTask.tid = count_id;
+	/* Ajusta as prioridades */
+	mainTask.prio_static = 0;
+	mainTask.prio_dynamic = 0;
 	/* Realiza uma cópia do contexto atual pra ser o contexto da main */
 	getcontext (&(mainTask.context));
 	/* Salvar um ponteiro para a task atual em execucao */
@@ -55,6 +58,9 @@ int task_create (task_t *task, void (*start_routine)(void*), void *arg)
 	task->main = &mainTask;
 	/* Atribui um id para a task */
 	task->tid = ++count_id;
+	/* Ajusta as prioridades */
+	task->prio_static = 0;
+	task->prio_dynamic = 0;
 	/* Realiza uma cópia do contexto atual */
 	getcontext (&(task->context));
 	/* Cria uma stack para essa task */
@@ -156,9 +162,9 @@ void task_suspend (task_t *task, task_t **queue)
 void task_resume (task_t *task)
 {
 	/* Retirar a task da fila atual dela */
-	if (task->queue) {
+	if (task->queue)
 		queue_remove((queue_t**)task->queue, (queue_t*)task);
-	}
+
 	/* Adicionar a fila de task prontas */
 	task->state = READY;
 	queue_append((queue_t**)&readyQueue, (queue_t*)task);
@@ -170,7 +176,8 @@ void task_resume (task_t *task)
 
 void task_yield ()
 {
-	if (currentTask != &mainTask) {
+	if (currentTask != &mainTask)
+	{
 		queue_append((queue_t**)&readyQueue, (queue_t*)currentTask);
 		currentTask->queue = &readyQueue;
 	}
@@ -183,10 +190,10 @@ void print_elem (void *ptr)
    task_t *elem = ptr ;
 
    if (!elem)
-      return ;
+	  return ;
 
    elem->prev ? printf ("%d", elem->prev->tid) : printf ("*") ;
-   printf ("<%d>", elem->tid) ;
+   printf ("<%d/%d>", elem->tid, elem->prio_dynamic) ;
    elem->next ? printf ("%d", elem->next->tid) : printf ("*") ;
 }
 
@@ -195,6 +202,9 @@ void dispatcher_body ()
 	task_t *nextTask;
 	while ( queue_size((queue_t*)readyQueue) )
 	{
+		#ifdef DEBUG
+		queue_print("dispatcher: fila",(queue_t*)nextTask,(void*)*print_elem);
+		#endif
 		nextTask = scheduler();
 		if (nextTask)
 		{
@@ -206,10 +216,10 @@ void dispatcher_body ()
 			#ifdef DEBUG
 			printf("dispatcher: entrando task %d\n", nextTask->tid);
 			#endif
-			if ( task_switch (nextTask) ) {
+			if ( task_switch (nextTask) )
 				exit(-1);
-			}
-			if (isExitCurrentTask == 1) {
+			if (isExitCurrentTask == 1)
+			{
 				#ifdef DEBUG
 				printf ("task_switch: limpando a task %d\n", nextTask->tid);
 				#endif
@@ -219,14 +229,94 @@ void dispatcher_body ()
 		}
 	}
 	#ifdef DEBUG
-	printf("dispatcher: finalizando \n");
+	printf("dispatcher: finalizando\n");
 	#endif
 	task_exit(0);
 }
 
 task_t* scheduler ()
 {
-	return (task_t*)readyQueue;
+	task_t *aux, *newTask;
+
+	#ifdef DEBUG
+	printf("scheduler: iniciando\n");
+	#endif
+
+	/* Fila vazia? */
+	if ( readyQueue == NULL )
+	{
+		#ifdef DEBUG
+		printf("scheduler: não há task pronta\n");
+		#endif
+		return NULL;
+	}
+
+	/* Fila com um único elemento */
+	if ( readyQueue == readyQueue->next )
+	{
+		#ifdef DEBUG
+		printf("scheduler: escolhido: task %d com prioridade %d\n",
+			readyQueue->tid,readyQueue->prio_dynamic);
+		#endif
+		readyQueue->prio_dynamic = readyQueue->prio_static;
+		return readyQueue;
+	}
+
+	/* Fila com mais de um elemento */
+	/* variável usada para percorrer a fila de tarefas prontas */
+	aux = readyQueue->next;
+	/* ponteiro para a tarefas escolhida */
+	newTask = readyQueue;
+	/* Envelhecer todos elementos (o escolhido terá seu envelhecimento resetado) */
+	if (newTask->prio_dynamic > -20)
+		newTask->prio_dynamic--;
+	/* Percorrer toda a fila de tarefas prontas */
+	do
+	{
+		if (aux->prio_dynamic > -20)
+			aux->prio_dynamic--;
+		/* Achado uma tarefa com prioridade dinâmica menor OU igual mas com estática menor ... */
+		if (newTask->prio_dynamic > aux->prio_dynamic || (
+				newTask->prio_dynamic == aux->prio_dynamic && 
+				newTask->prio_static > aux->prio_static )
+			)
+		{
+			/* ... vamos escolher ela */
+			newTask = aux;
+		}
+		aux = aux->next;
+	}
+	while (aux != readyQueue);
+
+	#ifdef DEBUG
+	printf("scheduler: escolhido: task %d com prioridade %d\n",
+		newTask->tid,newTask->prio_dynamic);
+	#endif
+	/* Reseta a prioridade dinamica */
+	newTask->prio_dynamic = newTask->prio_static;
+	return newTask;
 }
 
+void task_setprio (task_t *task, int prio)
+{
+	if (prio > 20 || prio < -20)
+	{
+		#ifdef DEBUG
+		printf("task_setprio: prioridade %d inválida (-20 a +20 apenas)\n", prio);
+		#endif
+		return;
+	}
+	if (task == NULL)
+	{
+		task = currentTask;
+	}
+	task->prio_static = prio;
+	task->prio_dynamic = prio;
+}
 
+int task_getprio (task_t *task)
+{
+	if (task == NULL)
+		return currentTask->prio_static;
+	return task->prio_static;
+}

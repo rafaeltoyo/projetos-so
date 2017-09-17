@@ -23,6 +23,8 @@ typedef struct task_t
 	struct task_t **queue;
 	ucontext_t context;
 	int tid;
+	int prio_static;
+	int prio_dynamic;
 	enum state_t {READY, SUSPENDED, RUNNING} state;
 } task_t ;
 

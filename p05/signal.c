@@ -30,7 +30,8 @@ int main (void)
       perror ("Erro em sigaction: ") ;
       exit (1) ;
    }
-
+   int teste = SIGINT;
+   printf("%d", teste);
    /* laço vazio */
    while (1) ;
 }

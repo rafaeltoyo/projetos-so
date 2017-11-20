@@ -50,8 +50,8 @@ typedef struct task_t
 typedef struct
 {
 	unsigned int size;
-	struct task_t **queue;
-	enum status {SEM_ON, SEM_OFF};
+	struct task_t *queue;
+	enum status_s {SEM_OFF, SEM_ON} status;
 } semaphore_t ;
 
 // estrutura que define um mutex

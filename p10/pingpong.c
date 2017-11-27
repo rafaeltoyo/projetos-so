@@ -219,8 +219,6 @@ void task_suspend(task_t *task, task_t **queue)
 	queue_append((queue_t**)queue, (queue_t*)task);
 	task->queue = queue;
 
-	task_switch(&dispatcherTask);
-
 	#ifdef DEBUG
 	printf ("task_suspend: tarefa %d saindo da suspensao\n", task->tid);
 	#endif
@@ -250,10 +248,11 @@ void task_yield()
 	#ifdef DEBUG
 	printf ("task_yield: tarefa %d perdendo processador\n", currentTask->tid);
 	#endif
-
-	queue_append((queue_t**)&readyQueue, (queue_t*)currentTask);
-	currentTask->queue = &readyQueue;
-
+    if (currentTask->state == RUNNING)
+    {
+        queue_append((queue_t**)&readyQueue, (queue_t*)currentTask);
+	    currentTask->queue = &readyQueue;
+    }
 	task_switch(&dispatcherTask);
 }
 
@@ -304,10 +303,8 @@ int task_join (task_t *task)
 	 * Coloca na fila de dependência da task passada
 	 * Volta para o dispatcher e aguarda essa tarefa receber o processador novamente
 	 */
-	#ifdef DEBUG
-	printf ("task_join: suspendendo ...\n");
-	#endif
 	task_suspend(currentTask, &(task->join_queue));
+    task_yield();
 	/* Voltando, retorna o exit_code registrado */
 	#ifdef DEBUG
 	printf ("task_join: ... voltando (exit_code = %d)\n", currentTask->exit_code);
@@ -345,6 +342,7 @@ void task_sleep(int t) {
 	printf ("task_sleep: tempo adormecida (previsto): %ds\n", t);
 	#endif
 	task_suspend(currentTask, &sleepQueue);
+    task_yield();
 }
 
 #ifdef DEBUG
@@ -521,9 +519,6 @@ void signal_behaviour(int signum)
 		if (--currentTask->quantum <= 0)
 		{
 			currentTask->quantum = 0;
-			#ifdef DEBUG
-			printf("signal_behaviour: fim da execucao\n");
-			#endif
 			if (isLockedYield)
 			{
 				#ifdef DEBUG
@@ -531,6 +526,9 @@ void signal_behaviour(int signum)
 				#endif
 				return;
 			}
+            #ifdef DEBUG
+			printf("signal_behaviour: fim da execucao\n");
+			#endif
 			task_yield();
 		}
 	}
@@ -587,80 +585,94 @@ int sem_create (semaphore_t *s, int value)
 	if (s->status == SEM_ON)
 	{
 		#ifdef DEBUG
-		printf("sem_create: semaforo ja inicializado\n");
+		printf("sem_create: ERRO, semaforo ja inicializado\n");
 		#endif
 		return -1;
 	}
 	s->size = value;
 	s->status = SEM_ON;
-	#ifdef DEBUG
-	printf("sem_create: semaforo criado com sucesso\n");
-	#endif
 	return 0;
 }
 
 int sem_down (semaphore_t *s)
 {
-	/* Checar se o semaforo esta ativo */
 	#ifdef DEBUG
 	printf("sem_down: task %d solicitando semaforo\n", currentTask->tid);
 	#endif
-	if (s->status == SEM_ON)
-	{
-		/* Semaforo ja esta cheio? */
-		/* Decrementa o contador */
-		if (--s->size < 0)
+    /* Checar se o semaforo existe e esta ativo */
+    if (s == NULL || s->status == SEM_OFF)
+    {
+        #ifdef DEBUG
+	    printf("sem_down: ERRO, semoforo nao existe\n");
+	    #endif
+	    return -1;
+    }
+    /* Bloquear preempcao */
+    isLockedYield = 1;
+    /* Decrementa o contador */
+    if (--s->size < 0)
+    {
+        #ifdef DEBUG
+		printf("sem_down: semoforo cheio, aguarde ...\n");
+		#endif
+        /* Aguardar espaco ... (isLockedYield = 0 antes do switch) */
+		task_suspend(currentTask, &(s->queue));
+        isLockedYield = 0;
+        task_yield();
+        /* ... o semaforo ainda existe apos a espera? */
+        if (s->status == SEM_OFF)
 		{
 			#ifdef DEBUG
-			printf("sem_down: semoforo cheio, aguarde ...\n");
+			printf("sem_down: ERRO, semoforo ja encerrado\n");
 			#endif
-			/* Aguardar espaco ... */
-			task_suspend(currentTask, &(s->queue));
-			/* ... o semaforo ainda existe apos a espera? */
-			if (s->status == SEM_OFF)
-			{
-				#ifdef DEBUG
-				printf("sem_down: ERRO, semoforo ja encerrado\n");
-				#endif
-				return -1;
-			}
+			return -1;
 		}
-		return 0;
-	}
-	#ifdef DEBUG
-	printf("sem_down: ERRO, semoforo ja encerrado\n");
-	#endif
-	/* Erro: Semaforo ja encerrado */
-	return -1;
+    }
+    isLockedYield = 0;
+	return 0;
 }
 
 int sem_up (semaphore_t *s)
 {
-	/* Bloquear preempcao */
-	isLockedYield = 1;
-	/* Checar se o semaforo esta ativo */
-	if (s->status == SEM_ON)
+    #ifdef DEBUG
+	printf("sem_up: task %d liberando o semaforo\n", currentTask->tid);
+	#endif
+    /* Checar se o semaforo existe e esta ativo */
+    if (s == NULL || s->status == SEM_OFF)
+    {
+        #ifdef DEBUG
+	    printf("sem_up: ERRO, semoforo nao existe\n");
+	    #endif
+	    return -1;
+    }
+    /* Bloquear preempcao */
+    isLockedYield = 1;
+	/* Aumentar contador */
+	s->size++;
+	if (s->queue)
 	{
-		/* Aumentar contador */
-		s->size++;
-		if (s->queue)
-		{
-			/* Retornar primeiro elemento da fila para fila de prontos */
-			task_resume(s->queue);
-		}
-		/* Liberar preempcao */
-		isLockedYield = 0;
-		return 0;
+        #ifdef DEBUG
+        printf("sem_up: Liberando a task %d para fila de prontos\n", s->queue->tid);
+        #endif
+		/* Retornar primeiro elemento da fila para fila de prontos */
+		task_resume(s->queue);
 	}
-	/* Erro: Liberar preempcao */
+	/* Liberar preempcao */
 	isLockedYield = 0;
-	return -1;
+	return 0;
 }
 
 int sem_destroy (semaphore_t *s)
 {
-	if (s->status == SEM_OFF)
+    #ifdef DEBUG
+	printf("sem_destroy: Solicitacao de destruicao do semaforo\n");
+	#endif
+    /* Checar se o semaforo existe e esta ativo */
+	if (s == NULL || s->status == SEM_OFF)
 	{
+        #ifdef DEBUG
+	    printf("sem_destroy: ERRO, semaforo nao existe\n");
+	    #endif
 		/* Erro: Semaforo ja encerrado */
 		return -1;
 	}

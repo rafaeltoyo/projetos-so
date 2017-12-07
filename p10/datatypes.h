@@ -15,7 +15,7 @@
 #include "queue.h"
 
 #define STACKSIZE 32768		/* tamanho de pilha das threads */
-#define QUANTUM_SIZE 20
+#define QUANTUM_SIZE 1
 #define MAX_PRIORITY 20
 
 // estrutura que define um tratador de sinal (deve ser global ou static)

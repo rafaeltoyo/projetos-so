@@ -16,6 +16,25 @@ short isExitCurrentTask;
 short isLockedYield;
 unsigned int systimeCount = 0;
 
+#ifdef DEBUG
+/* 
+ * imprime na tela um elemento da fila (chamada pela função queue_print) 
+ * Funcao copiada e adaptada do testafila.c (projeto 00)
+ * Usada apenas para debugar a fila de tarefas prontas
+ */
+void print_elem(void *ptr)
+{
+   task_t *elem = ptr ;
+
+   if (!elem)
+      return ;
+
+   elem->prev ? printf ("%d", elem->prev->tid) : printf ("*") ;
+   printf ("<%d>", elem->tid) ;
+   elem->next ? printf ("%d", elem->next->tid) : printf ("*") ;
+}
+#endif
+
 void pingpong_init()
 {
 	setvbuf(stdout, 0, _IONBF, 0);
@@ -93,16 +112,13 @@ int task_create(task_t *task, void (*start_routine)(void*), void *arg)
 	getcontext(&(task->context));
 	/* Cria uma stack para essa task */
 	stack = malloc(STACKSIZE) ;
-	if (stack)
-	{
+	if (stack) {
 		/* Inicializa valores para o contexto */
 		task->context.uc_stack.ss_sp = stack ;
 		task->context.uc_stack.ss_size = STACKSIZE;
 		task->context.uc_stack.ss_flags = 0;
 		task->context.uc_link = 0;
-	}
-	else
-	{
+	} else {
 		perror("Erro na criação da pilha: ");
 		return(-1);
 	}
@@ -134,8 +150,10 @@ int task_switch(task_t *task)
 	#ifdef DEBUG
 	printf("task_switch: trocando contexto %d -> %d\n", oldTask->tid, task->tid);
 	#endif
-	if (swapcontext(&(oldTask->context),&(task->context)) < 0)
+
+	if (swapcontext(&(oldTask->context),&(task->context)) < 0) {
 		return -1;
+	}
 	return 0;
 }
 
@@ -144,38 +162,34 @@ void task_exit(int exit_code)
 	currentTask->state = FINISHED;
 	/* Tarefa sendo encerrada ... */
 	/* Mostrar dados finais da tarefa */
-	printf("Task %d exit: execution time %d ms, processor time %d ms, %d activations\n",
-			currentTask->tid,
-			systime() - currentTask->start_time,
-			currentTask->total_time,
-			currentTask->activation
-		);
+	printf(
+		"Task %d exit: execution time %d ms, processor time %d ms, %d activations\n",
+		currentTask->tid,
+		systime() - currentTask->start_time,
+		currentTask->total_time,
+		currentTask->activation
+	);
 
 	#ifdef DEBUG
 	printf("task_exit: tarefa %d sendo encerrada\n", currentTask->tid);
 	#endif
 
 	/* Desbloquear as tarefas que deram join nessa */
-	if (currentTask->join_queue)
-	{
-		while (currentTask->join_queue)
-		{
+	if (currentTask->join_queue) {
+		while (currentTask->join_queue) {
 			currentTask->join_queue->exit_code = exit_code;
 			task_resume(currentTask->join_queue);
 		}
 	}
 
 	/* Finalizar o código se for o dispatcher (última task e terminar) */
-	if (currentTask == &dispatcherTask)
-	{
+	if (currentTask == &dispatcherTask) {
 		#ifdef DEBUG
 		printf("task_exit: fim do dispatcher\n");
 		#endif
 		exit(0);
-	}
-	/* Senao temos que retornar para o dispatcher mesmo */
-	else
-	{
+	} else {
+		/* Senao temos que retornar para o dispatcher mesmo */
 		#ifdef DEBUG
 		printf("task_exit: voltando para o dispatcher\n");
 		#endif
@@ -202,11 +216,13 @@ void task_suspend(task_t *task, task_t **queue)
 	#endif
 
 	/* Ha uma task passada como parametro? */
-	if (!task)
+	if (!task) {
 		task = currentTask;
+	}
 	/* Ha uma queue passada como parametro? */
-	if (!queue)
+	if (!queue) {
 		return;
+	}
 
 	#ifdef DEBUG
 	printf ("task_suspend: tarefa %d sendo suspensa\n", task->tid);
@@ -226,10 +242,9 @@ void task_suspend(task_t *task, task_t **queue)
 
 void task_resume(task_t *task)
 {
-	if (!task)
+	if (!task || task->state == FINISHED) {
 		return;
-	if (task->state == FINISHED)
-		return;
+	}
 	/* Retirar a task da fila atual dela */
 	queue_remove((queue_t**)task->queue, (queue_t*)task);
 	/* Adicionar a fila de task prontas */
@@ -248,8 +263,10 @@ void task_yield()
 	#ifdef DEBUG
 	printf ("task_yield: tarefa %d perdendo processador\n", currentTask->tid);
 	#endif
-    if (currentTask->state == RUNNING)
-    {
+    if (currentTask->state == RUNNING) {
+    	if (currentTask->queue) {
+    		queue_remove((queue_t**)currentTask->queue, (queue_t*)currentTask);
+    	}
         queue_append((queue_t**)&readyQueue, (queue_t*)currentTask);
 	    currentTask->queue = &readyQueue;
     }
@@ -304,7 +321,7 @@ int task_join (task_t *task)
 	 * Volta para o dispatcher e aguarda essa tarefa receber o processador novamente
 	 */
 	task_suspend(currentTask, &(task->join_queue));
-    task_yield();
+	task_yield();
 	/* Voltando, retorna o exit_code registrado */
 	#ifdef DEBUG
 	printf ("task_join: ... voltando (exit_code = %d)\n", currentTask->exit_code);
@@ -344,25 +361,6 @@ void task_sleep(int t) {
 	task_suspend(currentTask, &sleepQueue);
     task_yield();
 }
-
-#ifdef DEBUG
-/* 
- * imprime na tela um elemento da fila (chamada pela função queue_print) 
- * Funcao copiada e adaptada do testafila.c (projeto 00)
- * Usada apenas para debugar a fila de tarefas prontas
- */
-void print_elem(void *ptr)
-{
-   task_t *elem = ptr ;
-
-   if (!elem)
-      return ;
-
-   elem->prev ? printf ("%d", elem->prev->tid) : printf ("*") ;
-   printf ("<%d>", elem->tid) ;
-   elem->next ? printf ("%d", elem->next->tid) : printf ("*") ;
-}
-#endif
 
 /* *** *** *** FUNCAO DO DISPATCHER *** *** *** */
 void dispatcher_body()
@@ -521,15 +519,18 @@ void signal_behaviour(int signum)
 			currentTask->quantum = 0;
 			if (isLockedYield)
 			{
+				printf("signal_behaviour: preempcao bloqueada, aguardando ...\n");
 				#ifdef DEBUG
 				printf("signal_behaviour: preempcao bloqueada, aguardando ...\n");
 				#endif
-				return;
 			}
-            #ifdef DEBUG
-			printf("signal_behaviour: fim da execucao\n");
-			#endif
-			task_yield();
+			else
+			{
+				#ifdef DEBUG
+				printf("signal_behaviour: fim da execucao\n");
+				#endif
+				task_yield();
+			}
 		}
 	}
 }
@@ -600,8 +601,7 @@ int sem_down (semaphore_t *s)
 	printf("sem_down: task %d solicitando semaforo\n", currentTask->tid);
 	#endif
     /* Checar se o semaforo existe e esta ativo */
-    if (s == NULL || s->status == SEM_OFF)
-    {
+    if (s == NULL || s->status == SEM_OFF) {
         #ifdef DEBUG
 	    printf("sem_down: ERRO, semoforo nao existe\n");
 	    #endif
@@ -610,18 +610,20 @@ int sem_down (semaphore_t *s)
     /* Bloquear preempcao */
     isLockedYield = 1;
     /* Decrementa o contador */
-    if (--s->size < 0)
-    {
+    if (--s->size < 0) {
+    	printf("SEMAFORO CHEIO!\n");
         #ifdef DEBUG
 		printf("sem_down: semoforo cheio, aguarde ...\n");
 		#endif
         /* Aguardar espaco ... (isLockedYield = 0 antes do switch) */
 		task_suspend(currentTask, &(s->queue));
+		if (!s->queue) {
+			printf("ERROR!!!\n");
+		}
         isLockedYield = 0;
         task_yield();
         /* ... o semaforo ainda existe apos a espera? */
-        if (s->status == SEM_OFF)
-		{
+        if (s->status == SEM_OFF) {
 			#ifdef DEBUG
 			printf("sem_down: ERRO, semoforo ja encerrado\n");
 			#endif
@@ -634,27 +636,24 @@ int sem_down (semaphore_t *s)
 
 int sem_up (semaphore_t *s)
 {
-    #ifdef DEBUG
+	#ifdef DEBUG
 	printf("sem_up: task %d liberando o semaforo\n", currentTask->tid);
 	#endif
     /* Checar se o semaforo existe e esta ativo */
-    if (s == NULL || s->status == SEM_OFF)
-    {
-        #ifdef DEBUG
+    if (!s || s->status == SEM_OFF) {
+    	#ifdef DEBUG
 	    printf("sem_up: ERRO, semoforo nao existe\n");
 	    #endif
+	    /* Erro: Semaforo ja encerrado */
 	    return -1;
     }
     /* Bloquear preempcao */
     isLockedYield = 1;
-	/* Aumentar contador */
-	s->size++;
-	if (s->queue)
-	{
-        #ifdef DEBUG
-        printf("sem_up: Liberando a task %d para fila de prontos\n", s->queue->tid);
-        #endif
-		/* Retornar primeiro elemento da fila para fila de prontos */
+	/* Aumentar contador e verifica se podemos acordar alguma task (abriu espaço) */
+	if (++s->size <= 0 && s->queue) {
+		#ifdef DEBUG
+	    printf("sem_up: acordando task %d\n", s->queue->tid);
+	    #endif
 		task_resume(s->queue);
 	}
 	/* Liberar preempcao */
@@ -668,8 +667,7 @@ int sem_destroy (semaphore_t *s)
 	printf("sem_destroy: Solicitacao de destruicao do semaforo\n");
 	#endif
     /* Checar se o semaforo existe e esta ativo */
-	if (s == NULL || s->status == SEM_OFF)
-	{
+	if (!s || s->status == SEM_OFF) {
         #ifdef DEBUG
 	    printf("sem_destroy: ERRO, semaforo nao existe\n");
 	    #endif
@@ -679,7 +677,9 @@ int sem_destroy (semaphore_t *s)
 	/* Encerrar semaforo */
 	s->status = SEM_OFF;
 	/* Liberar elementos suspencos */
-	while (s->queue) task_resume(s->queue);
+	while (s->queue) {
+		task_resume(s->queue);
+	}
 	return 0;
 }
 

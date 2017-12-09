@@ -42,6 +42,7 @@ typedef struct task_t
 	unsigned int activation;
 	unsigned int exit_code;
 	unsigned int sleep_time;
+	short barrier_error;
 	enum state_t {RUNNING, SUSPENDED, FINISHED} state;
 	enum type_t {USER_TASK, SYSTEM_TASK} type;
 } task_t ;
@@ -50,8 +51,9 @@ typedef struct task_t
 typedef struct
 {
 	int size;
+	int sid;
 	struct task_t *queue;
-	enum status_s {SEM_OFF, SEM_ON} status;
+	enum sstatus_s {SEM_OFF, SEM_ON} status;
 } semaphore_t ;
 
 // estrutura que define um mutex
@@ -63,7 +65,11 @@ typedef struct
 // estrutura que define uma barreira
 typedef struct
 {
-  // preencher quando necessário
+	int size;
+	int max_size;
+	int bid;
+	struct task_t *queue;
+	enum bstatus_s {BARRIER_OFF, BARRIER_ON} status;
 } barrier_t ;
 
 // estrutura que define uma fila de mensagens

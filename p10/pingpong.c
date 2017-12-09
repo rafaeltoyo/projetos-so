@@ -379,10 +379,6 @@ void dispatcher_body()
 			sleepTaskIterator--;
 		}
 
-		if (!readyQueue) {
-			printf("dispatcher: fila de task prontas vazia ...\n");
-		}
-
 		/* Usar o scheduler para obter uma nova tarefa */
 		nextTask = scheduler();
 		if (nextTask) {

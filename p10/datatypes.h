@@ -54,6 +54,13 @@ typedef struct
 	enum status_s {SEM_OFF, SEM_ON} status;
 } semaphore_t ;
 
+typedef struct
+{
+	int valor;
+	struct buffer_t *prev;
+	struct buffer_t *next;
+} buffer_t ;
+
 // estrutura que define um mutex
 typedef struct
 {

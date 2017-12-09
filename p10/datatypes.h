@@ -15,7 +15,7 @@
 #include "queue.h"
 
 #define STACKSIZE 32768		/* tamanho de pilha das threads */
-#define QUANTUM_SIZE 1
+#define QUANTUM_SIZE 20
 #define MAX_PRIORITY 20
 
 // estrutura que define um tratador de sinal (deve ser global ou static)
@@ -49,7 +49,7 @@ typedef struct task_t
 // estrutura que define um semáforo
 typedef struct
 {
-	unsigned int size;
+	int size;
 	struct task_t *queue;
 	enum status_s {SEM_OFF, SEM_ON} status;
 } semaphore_t ;

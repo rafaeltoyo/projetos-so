@@ -14,9 +14,9 @@ unsigned long count_id = 0;
 unsigned long numTaskOn = 0;
 short isExitCurrentTask;
 short isLockedYield;
-unsigned int systimeCount = 0;
+unsigned long systimeCount = 0;
 
-#ifdef DEBUG
+
 /* 
  * imprime na tela um elemento da fila (chamada pela função queue_print) 
  * Funcao copiada e adaptada do testafila.c (projeto 00)
@@ -26,14 +26,15 @@ void print_elem(void *ptr)
 {
    task_t *elem = ptr ;
 
-   if (!elem)
+   if (!elem) {
       return ;
+   }
 
    elem->prev ? printf ("%d", elem->prev->tid) : printf ("*") ;
    printf ("<%d>", elem->tid) ;
    elem->next ? printf ("%d", elem->next->tid) : printf ("*") ;
 }
-#endif
+
 
 void pingpong_init()
 {
@@ -211,49 +212,46 @@ int task_id()
 
 void task_suspend(task_t *task, task_t **queue)
 {
-	#ifdef DEBUG
-	printf ("task_suspend: inicio\n");
-	#endif
-
 	/* Ha uma task passada como parametro? */
 	if (!task) {
 		task = currentTask;
 	}
 	/* Ha uma queue passada como parametro? */
 	if (!queue) {
+		#ifdef DEBUG
+		printf ("task_suspend: parametro fila esta nulo\n");
+		#endif
 		return;
 	}
 
 	#ifdef DEBUG
 	printf ("task_suspend: tarefa %d sendo suspensa\n", task->tid);
 	#endif
-
-	task->state = SUSPENDED;
-
 	/* Troca a task de fila (atual -> queue) */
 	queue_remove((queue_t**)task->queue, (queue_t*)task);
 	queue_append((queue_t**)queue, (queue_t*)task);
 	task->queue = queue;
-
-	#ifdef DEBUG
-	printf ("task_suspend: tarefa %d saindo da suspensao\n", task->tid);
-	#endif
+	task->state = SUSPENDED;
+	isLockedYield = 0;
+	task_yield();
 }
 
 void task_resume(task_t *task)
 {
 	if (!task || task->state == FINISHED) {
+		#ifdef DEBUG
+		printf("task_resume: tarefa %d ja encerrada!\n", task->tid);
+		#endif
 		return;
 	}
-	/* Retirar a task da fila atual dela */
-	queue_remove((queue_t**)task->queue, (queue_t*)task);
-	/* Adicionar a fila de task prontas */
-	queue_append((queue_t**)&readyQueue, (queue_t*)task);
-	task->queue = &readyQueue;
-	task->state = RUNNING;
 	#ifdef DEBUG
 	printf("task_resume: tarefa %d pronta!\n", task->tid);
 	#endif
+	/* Retirar a task da fila atual dela e adicionar na fila de prontos */
+	queue_remove((queue_t**)task->queue, (queue_t*)task);
+	queue_append((queue_t**)&readyQueue, (queue_t*)task);
+	task->queue = &readyQueue;
+	task->state = RUNNING;
 }
 
 void task_yield()
@@ -264,9 +262,7 @@ void task_yield()
 	printf ("task_yield: tarefa %d perdendo processador\n", currentTask->tid);
 	#endif
     if (currentTask->state == RUNNING) {
-    	if (currentTask->queue) {
-    		queue_remove((queue_t**)currentTask->queue, (queue_t*)currentTask);
-    	}
+		queue_remove((queue_t**)currentTask->queue, (queue_t*)currentTask);
         queue_append((queue_t**)&readyQueue, (queue_t*)currentTask);
 	    currentTask->queue = &readyQueue;
     }
@@ -276,8 +272,7 @@ void task_yield()
 void task_setprio(task_t *task, int prio)
 {
 	/* Verificar os limites de prioridade */
-	if (prio > MAX_PRIORITY || prio < -MAX_PRIORITY)
-	{
+	if (prio > MAX_PRIORITY || prio < -MAX_PRIORITY) {
 		#ifdef DEBUG
 		printf("task_setprio: prioridade %d inválida (-MAX_PRIORITY a +MAX_PRIORITY apenas)\n", prio);
 		#endif
@@ -285,8 +280,7 @@ void task_setprio(task_t *task, int prio)
 		return;
 	}
 	/* Se nao houver task, vamos modificar a task atual */
-	if (task == NULL)
-	{
+	if (!task) {
 		task = currentTask;
 	}
 	/* Atualizar prioridade estatica e resetar a prioridade dinamica */
@@ -297,8 +291,9 @@ void task_setprio(task_t *task, int prio)
 int task_getprio(task_t *task)
 {
 	/* Se nao houver task, retorna a prioridade da task atual */
-	if (task == NULL)
+	if (!task) {
 		return currentTask->prio_static;
+	}
 	/* Se nao retorna a prioridade da task */
 	return task->prio_static;
 }
@@ -308,8 +303,7 @@ int task_join (task_t *task)
 	#ifdef DEBUG
 	printf ("task_join: tarefa %d dando join na tarefa %d\n", currentTask->tid, task->tid);
 	#endif
-	if (task == NULL || currentTask == NULL || task->state == FINISHED)
-	{
+	if (!task || !currentTask || task->state == FINISHED) {
 		#ifdef DEBUG
 		printf ("task_join: erro\n");
 		#endif
@@ -321,7 +315,6 @@ int task_join (task_t *task)
 	 * Volta para o dispatcher e aguarda essa tarefa receber o processador novamente
 	 */
 	task_suspend(currentTask, &(task->join_queue));
-	task_yield();
 	/* Voltando, retorna o exit_code registrado */
 	#ifdef DEBUG
 	printf ("task_join: ... voltando (exit_code = %d)\n", currentTask->exit_code);
@@ -334,8 +327,7 @@ void task_sleep(int t) {
 	#ifdef DEBUG
 	printf ("task_sleep: tarefa %d adormecendo\n", currentTask->tid);
 	#endif
-	if (currentTask == NULL || currentTask == NULL || currentTask->state == FINISHED)
-	{
+	if (!currentTask || currentTask->state == FINISHED) {
 		#ifdef DEBUG
 		printf ("task_sleep: erro (task invalida)\n");
 		#endif
@@ -359,7 +351,6 @@ void task_sleep(int t) {
 	printf ("task_sleep: tempo adormecida (previsto): %ds\n", t);
 	#endif
 	task_suspend(currentTask, &sleepQueue);
-    task_yield();
 }
 
 /* *** *** *** FUNCAO DO DISPATCHER *** *** *** */
@@ -370,17 +361,16 @@ void dispatcher_body()
 	unsigned int sleepTaskIterator;
 
 	/* Inicializar o timer para registrar os 'tiks' */
-	if (signal_init())
+	if (signal_init()) {
 		exit(1);
+	}
 
 	/* Enquanto houver tarefas da fila de prontas */
-	while (numTaskOn)
-	{
+	while (numTaskOn) {
 		/* Desbloquear as tarefas adormecidas */
 		sleepTaskIterator = queue_size((queue_t*)sleepQueue);
 		nextSleepyTask = sleepQueue;
-		while (sleepQueue && sleepTaskIterator)
-		{
+		while (sleepQueue && sleepTaskIterator) {
 			if (nextSleepyTask->sleep_time <= systime()) {
 				task_resume(nextSleepyTask);
 			} else {
@@ -389,10 +379,13 @@ void dispatcher_body()
 			sleepTaskIterator--;
 		}
 
+		if (!readyQueue) {
+			printf("dispatcher: fila de task prontas vazia ...\n");
+		}
+
 		/* Usar o scheduler para obter uma nova tarefa */
 		nextTask = scheduler();
-		if (nextTask)
-		{
+		if (nextTask) {
 			dispatcherTask.activation++;
 
 			#ifdef DEBUG
@@ -411,12 +404,12 @@ void dispatcher_body()
 			nextTask->activation++;
 
 			/* Trocar para essa task */
-			if (task_switch(nextTask))
+			if (task_switch(nextTask)) {
 				exit(-1);
+			}
 
 			/* Ao retornar ao dispatcher, verificar se a tarefa nao terminou sua exec. */
-			if (isExitCurrentTask == 1)
-			{
+			if (isExitCurrentTask) {
 				#ifdef DEBUG
 				printf("dispatcher: limpando a task %d\n", nextTask->tid);
 				#endif
@@ -443,8 +436,7 @@ task_t* scheduler()
 	#endif
 
 	/* Fila vazia? */
-	if ( readyQueue == NULL )
-	{
+	if (!readyQueue) {
 		#ifdef DEBUG
 		printf("scheduler: não há task pronta\n");
 		#endif
@@ -452,8 +444,7 @@ task_t* scheduler()
 	}
 
 	/* Fila com um único elemento */
-	if ( readyQueue == readyQueue->next )
-	{
+	if (readyQueue == readyQueue->next) {
 		#ifdef DEBUG
 		printf("scheduler: escolhido: task %d com prioridade %d\n",
 			readyQueue->tid,readyQueue->prio_dynamic);
@@ -468,8 +459,7 @@ task_t* scheduler()
 	/* ponteiro para a tarefas escolhida */
 	newTask = readyQueue;
 	/* Percorrer toda a fila de tarefas prontas */
-	do
-	{
+	do {
 		/* Achado uma tarefa com prioridade dinâmica menor OU igual mas com estática menor ... */
 		if (newTask->prio_dynamic > aux->prio_dynamic ||
 			(newTask->prio_dynamic == aux->prio_dynamic && 
@@ -485,8 +475,7 @@ task_t* scheduler()
 	aux = readyQueue;
 	/* Envelhecer todos elementos (o escolhido terá seu envelhecimento resetado) */
 	/* Percorrer toda a fila de tarefas prontas */
-	do
-	{
+	do {
 		if (aux != newTask && aux->prio_dynamic > -MAX_PRIORITY)
 			aux->prio_dynamic--;
 		aux = aux->next;
@@ -508,29 +497,23 @@ void signal_behaviour(int signum)
 	systimeCount++;
 	currentTask->total_time++;
 	/* Se a task atual for uma task de usuario, devemos decrementar a 'vida' dela */
-	if (currentTask->type == USER_TASK)
-	{
+	if (currentTask->type == USER_TASK) {
 		/* Se chegar em 0, a task deve perder o processador */
 		#ifdef DEBUG
 		printf("signal_behaviour: Tiks na task %d\n", currentTask->tid);
 		#endif
-		if (--currentTask->quantum <= 0)
-		{
+		if (--currentTask->quantum <= 0) {
 			currentTask->quantum = 0;
-			if (isLockedYield)
-			{
-				printf("signal_behaviour: preempcao bloqueada, aguardando ...\n");
+			if (isLockedYield) {
 				#ifdef DEBUG
 				printf("signal_behaviour: preempcao bloqueada, aguardando ...\n");
 				#endif
+				return;
 			}
-			else
-			{
-				#ifdef DEBUG
-				printf("signal_behaviour: fim da execucao\n");
-				#endif
-				task_yield();
-			}
+			#ifdef DEBUG
+			printf("signal_behaviour: fim da execucao\n");
+			#endif
+			task_yield();
 		}
 	}
 }
@@ -541,8 +524,7 @@ int signal_init()
 	action.sa_handler = signal_behaviour;
 	sigemptyset(&action.sa_mask);
 	action.sa_flags = 0;
-	if (sigaction(SIGALRM, &action, 0) < 0)
-	{
+	if (sigaction(SIGALRM, &action, 0) < 0) {
 		perror("Erro em sigaction: ");
 		exit(1);
 	}
@@ -561,8 +543,7 @@ int signal_init()
 	timer.it_interval.tv_sec  = 0;
 
 	/* arma o temporizador ITIMER_REAL */
-	if (setitimer(ITIMER_REAL, &timer, 0) < 0)
-	{
+	if (setitimer(ITIMER_REAL, &timer, 0) < 0) {
 		perror("Erro em setitimer: ");
 		exit(1);
 	}
@@ -583,8 +564,7 @@ int sem_create (semaphore_t *s, int value)
 	#ifdef DEBUG
 	printf("sem_create: criando semaforo\n");
 	#endif
-	if (s->status == SEM_ON)
-	{
+	if (s->status == SEM_ON) {
 		#ifdef DEBUG
 		printf("sem_create: ERRO, semaforo ja inicializado\n");
 		#endif
@@ -601,27 +581,23 @@ int sem_down (semaphore_t *s)
 	printf("sem_down: task %d solicitando semaforo\n", currentTask->tid);
 	#endif
     /* Checar se o semaforo existe e esta ativo */
-    if (s == NULL || s->status == SEM_OFF) {
+    if (!s || s->status == SEM_OFF) {
+        
         #ifdef DEBUG
 	    printf("sem_down: ERRO, semoforo nao existe\n");
 	    #endif
+	    /* Erro: Semaforo ja encerrado */
 	    return -1;
     }
     /* Bloquear preempcao */
     isLockedYield = 1;
     /* Decrementa o contador */
     if (--s->size < 0) {
-    	printf("SEMAFORO CHEIO!\n");
         #ifdef DEBUG
 		printf("sem_down: semoforo cheio, aguarde ...\n");
 		#endif
         /* Aguardar espaco ... (isLockedYield = 0 antes do switch) */
-		task_suspend(currentTask, &(s->queue));
-		if (!s->queue) {
-			printf("ERROR!!!\n");
-		}
-        isLockedYield = 0;
-        task_yield();
+		task_suspend(currentTask, &(s->queue));        
         /* ... o semaforo ainda existe apos a espera? */
         if (s->status == SEM_OFF) {
 			#ifdef DEBUG
@@ -629,6 +605,8 @@ int sem_down (semaphore_t *s)
 			#endif
 			return -1;
 		}
+		isLockedYield = 0;
+		return 0;
     }
     isLockedYield = 0;
 	return 0;
@@ -679,7 +657,7 @@ int sem_destroy (semaphore_t *s)
 	/* Liberar elementos suspencos */
 	while (s->queue) {
 		task_resume(s->queue);
+		printf("sdadasdasd\n");
 	}
 	return 0;
 }
-

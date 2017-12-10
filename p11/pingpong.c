@@ -560,7 +560,7 @@ unsigned int systime ()
 int sem_create (semaphore_t *s, int value)
 {
 	#ifdef DEBUG
-	printf("sem_create: criando semaforo %d\n", count_sid);
+	printf("sem_create: criando semaforo %d\n", (int)count_sid);
 	#endif
 	if (s->status == SEM_ON) {
 		#ifdef DEBUG
